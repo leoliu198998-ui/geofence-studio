@@ -7,8 +7,8 @@ const CACHE_KEY = 'geofence-studio:fences'
 export const MODE_LABEL = { sale: '买卖', rent: '租赁' }
 const MODE_PREFIX = { sale: 'S', rent: 'R' }
 
-/** StrictMode 双挂载下，云端初始化 / 迁移只跑一次 */
-let cloudInitStarted = false
+/** HMR / 重复挂载下，云端迁移只尝试一次（普通拉取由 effect 的 cancelled 标志保护） */
+let migrationAttempted = false
 
 function loadCache() {
   try {
@@ -79,9 +79,11 @@ export function useFenceStore() {
   }, [fences])
 
   // ---- 云端初始化 + Realtime 订阅 ----
+  // 注意：不能用模块级"已初始化"标志——StrictMode 首跑 effect 会立即 cleanup，
+  // 续跑被早退后第一次初始化的 cancelled 又会丢弃结果，导致永远卡在 connecting。
+  // 每次挂载都初始化，副作用一律用 cancelled 保护即可（重复 select 无害）。
   useEffect(() => {
-    if (!supabase || cloudInitStarted) return undefined
-    cloudInitStarted = true
+    if (!supabase) return undefined
     let cancelled = false
 
     const init = async () => {
@@ -97,7 +99,8 @@ export function useFenceStore() {
       }
       setSyncStatus('online')
       const local = loadCache()
-      if (data.length === 0 && local.length > 0) {
+      if (data.length === 0 && local.length > 0 && !migrationAttempted) {
+        migrationAttempted = true
         // 首次迁移：本地旧数据上传到云端，统一归买卖视图并重新编号 S-001…
         const migrated = local.map((f, i) => ({
           id: f.id || crypto.randomUUID(),

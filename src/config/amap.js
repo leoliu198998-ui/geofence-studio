@@ -5,4 +5,4 @@ export const AMAP_SECURITY_CODE = import.meta.env.VITE_AMAP_SECURITY_CODE || ''
 export const hasAmapConfig = Boolean(AMAP_KEY && AMAP_SECURITY_CODE)
 
 export const AMAP_MAP_STYLE = 'amap://styles/darkblue'
-export const AMAP_MAP_STYLE_LIGHT = 'amap://styles/whitesmoke'
+export const AMAP_MAP_STYLE_LIGHT = 'amap://styles/normal'

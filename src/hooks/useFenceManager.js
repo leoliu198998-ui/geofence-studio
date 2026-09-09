@@ -17,6 +17,9 @@ const DRAW_STYLE = {
   fillColor: '#FF5A1F',
   fillOpacity: 0.18,
   strokeStyle: 'dashed',
+  // 关键：让预览多边形上的鼠标事件冒泡到地图，
+  // 否则在已成形预览区域内单击/双击会被覆盖物拦截（无法加点、双击不收尾）
+  bubble: true,
   zIndex: 50,
 }
 
@@ -133,32 +136,54 @@ export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, o
     }
   }, [editingId])
 
-  const requestFinish = useCallback(() => {
-    const d = drawingRef.current
-    if (!d) return
-    const path = dedupeTail(d.path)
-    if (path.length < 3) {
-      toast.warning('至少需要 3 个顶点才能构成围栏')
-      return
+  const requestFinish = useCallback(
+    (dropLast = 0) => {
+      const d = drawingRef.current
+      if (!d) return
+      // 双击收尾时，双击的第一下单击已加了一个顶点，按需去掉
+      const raw = dropLast > 0 ? d.path.slice(0, -dropLast) : d.path
+      const path = dedupeTail(raw)
+      if (path.length < 3) {
+        toast.warning('至少需要 3 个顶点才能构成围栏')
+        return
+      }
+      const area = AMap.GeometryUtil.ringArea(path)
+      setDrawing(null)
+      setPendingName({ path, area })
+    },
+    [AMap],
+  )
+
+  // ---- 绘制模式：禁用地图拖拽与双击缩放，退出时恢复 ----
+  useEffect(() => {
+    if (!map) return
+    if (drawing) {
+      map.setStatus({ dragEnable: false, doubleClickZoom: false })
+    } else {
+      map.setStatus({ dragEnable: true, doubleClickZoom: true })
     }
-    const area = AMap.GeometryUtil.ringArea(path)
-    setDrawing(null)
-    setPendingName({ path, area })
-  }, [AMap])
+  }, [map, drawing !== null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- 绘制模式：事件绑定 ----
   useEffect(() => {
     if (!map || !drawing) return undefined
 
+    // AMap 对快速第二击会抑制 click 事件，map 级 dblclick 在 doubleClickZoom
+    // 关闭后也不可靠——双击收尾改为监听地图容器的 DOM dblclick：
+    // 双击的第一击若刚加了顶点（<450ms），收尾时去掉它
+    let lastAddAt = 0
     const onClick = (e) => {
       const p = [e.lnglat.getLng(), e.lnglat.getLat()]
+      lastAddAt = Date.now()
       setDrawing((d) => (d ? { ...d, path: [...d.path, p] } : d))
     }
     const onMove = (e) => {
       const p = [e.lnglat.getLng(), e.lnglat.getLat()]
       setDrawing((d) => (d ? { ...d, cursor: p } : d))
     }
-    const onDblClick = () => requestFinish()
+    const onDomDblClick = () => {
+      requestFinish(Date.now() - lastAddAt < 450 ? 1 : 0)
+    }
     const onKeyDown = (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -169,14 +194,15 @@ export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, o
       }
     }
 
+    const container = map.getContainer()
     map.on('click', onClick)
     map.on('mousemove', onMove)
-    map.on('dblclick', onDblClick)
+    container.addEventListener('dblclick', onDomDblClick)
     window.addEventListener('keydown', onKeyDown)
     return () => {
       map.off('click', onClick)
       map.off('mousemove', onMove)
-      map.off('dblclick', onDblClick)
+      container.removeEventListener('dblclick', onDomDblClick)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [map, drawing !== null, requestFinish]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -223,16 +249,15 @@ export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, o
     setDrawing(null)
   }, [])
 
+  // 注意：onInsert 副作用不能放在 setState updater 里（StrictMode 会双调 updater 导致重复保存）
   const confirmName = useCallback(
     (name) => {
-      setPendingName((p) => {
-        if (!p) return null
-        onInsert({ mode, name, path: p.path, area: p.area })
-        return null
-      })
+      if (!pendingName) return
+      onInsert({ mode, name, path: pendingName.path, area: pendingName.area })
+      setPendingName(null)
       toast.success('围栏已保存')
     },
-    [mode, onInsert],
+    [mode, onInsert, pendingName],
   )
 
   const cancelName = useCallback(() => setPendingName(null), [])
