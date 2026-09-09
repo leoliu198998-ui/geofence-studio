@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-const STORAGE_KEY = 'geofence-studio:fences'
-
 const FENCE_STYLE = {
   strokeColor: '#FF5A1F',
   strokeWeight: 1.5,
@@ -20,25 +18,6 @@ const DRAW_STYLE = {
   fillOpacity: 0.18,
   strokeStyle: 'dashed',
   zIndex: 50,
-}
-
-function loadFences() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const list = raw ? JSON.parse(raw) : []
-    return Array.isArray(list) ? list : []
-  } catch {
-    return []
-  }
-}
-
-/** 生成下一条记录编号：F-001、F-002…（基于现有最大序号递增） */
-function nextCode(fences) {
-  const max = fences.reduce((acc, f) => {
-    const m = /^F-(\d+)$/.exec(f.code || '')
-    return m ? Math.max(acc, Number(m[1])) : acc
-  }, 0)
-  return `F-${String(max + 1).padStart(3, '0')}`
 }
 
 /** 去掉双击结束产生的重复尾点 */
@@ -59,6 +38,7 @@ function fenceToFeature(f) {
     properties: {
       name: f.name,
       code: f.code,
+      mode: f.mode,
       area: Math.round(f.area),
       vertexCount: f.path.length,
       createdAt: f.createdAt,
@@ -81,11 +61,13 @@ function downloadGeoJSON(filename, features) {
 }
 
 /**
- * 围栏管理：绘制、编辑、持久化、导出。
- * @param {{ map: object|null, AMap: object|null }} args
+ * 围栏的地图交互层：绘制、顶点编辑、定位、导出。
+ * 数据读写交给 useFenceStore；本 hook 只接收当前模式的围栏列表。
+ * @param {{ map: object|null, AMap: object|null, mode: string, fences: Array,
+ *   onInsert: (f: object) => void, onUpdate: (id: string, patch: object) => void,
+ *   onRemove: (id: string) => void }} args
  */
-export function useFenceManager({ map, AMap }) {
-  const [fences, setFences] = useState(loadFences)
+export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, onRemove }) {
   const [drawing, setDrawing] = useState(null) // { path: [[lng,lat]...], cursor: [lng,lat]|null }
   const [pendingName, setPendingName] = useState(null) // { path, area }
   const [editingId, setEditingId] = useState(null)
@@ -97,16 +79,7 @@ export function useFenceManager({ map, AMap }) {
     drawingRef.current = drawing
   }, [drawing])
 
-  // ---- 持久化 ----
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fences))
-    } catch {
-      toast.error('围栏数据写入 localStorage 失败')
-    }
-  }, [fences])
-
-  // ---- 已保存围栏的多边形同步 ----
+  // ---- 当前模式围栏的多边形同步 ----
   useEffect(() => {
     if (!map || !AMap) return
     const store = polygonsRef.current
@@ -144,6 +117,21 @@ export function useFenceManager({ map, AMap }) {
       drawPolygonRef.current?.setMap(null)
     }
   }, [])
+
+  // 切换视图时：中止未完成的绘制 / 顶点编辑（render 期间调整 state）
+  const [prevMode, setPrevMode] = useState(mode)
+  if (mode !== prevMode) {
+    setPrevMode(mode)
+    setDrawing(null)
+    setPendingName(null)
+    setEditingId(null)
+  }
+  useEffect(() => {
+    if (!editingId && editorRef.current) {
+      editorRef.current.close()
+      editorRef.current = null
+    }
+  }, [editingId])
 
   const requestFinish = useCallback(() => {
     const d = drawingRef.current
@@ -239,42 +227,36 @@ export function useFenceManager({ map, AMap }) {
     (name) => {
       setPendingName((p) => {
         if (!p) return null
-        setFences((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            code: nextCode(prev),
-            name: name.trim() || '未命名围栏',
-            path: p.path,
-            area: p.area,
-            createdAt: new Date().toISOString(),
-          },
-        ])
+        onInsert({ mode, name, path: p.path, area: p.area })
         return null
       })
       toast.success('围栏已保存')
     },
-    [],
+    [mode, onInsert],
   )
 
   const cancelName = useCallback(() => setPendingName(null), [])
 
-  const renameFence = useCallback((id, name) => {
-    setFences((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, name: name.trim() || f.name } : f)),
-    )
-    toast.success('已重命名')
-  }, [])
+  const renameFence = useCallback(
+    (id, name) => {
+      onUpdate(id, { name: name.trim() || undefined })
+      toast.success('已重命名')
+    },
+    [onUpdate],
+  )
 
-  const removeFence = useCallback((id) => {
-    setFences((prev) => prev.filter((f) => f.id !== id))
-    toast.success('围栏已删除')
-  }, [])
+  const removeFence = useCallback(
+    (id) => {
+      onRemove(id)
+      toast.success('围栏已删除')
+    },
+    [onRemove],
+  )
 
   const clearAll = useCallback(() => {
-    setFences([])
-    toast.success('已清除全部围栏')
-  }, [])
+    for (const f of fences) onRemove(f.id)
+    toast.success(`已清除当前视图全部 ${fences.length} 条围栏`)
+  }, [fences, onRemove])
 
   const locateFence = useCallback(
     (id) => {
@@ -294,8 +276,7 @@ export function useFenceManager({ map, AMap }) {
       const editor = new AMap.PolygonEditor(map, polygon)
       const sync = () => {
         const path = polygon.getPath().map((p) => [p.getLng(), p.getLat()])
-        const area = AMap.GeometryUtil.ringArea(path)
-        setFences((prev) => prev.map((f) => (f.id === id ? { ...f, path, area } : f)))
+        onUpdate(id, { path, area: AMap.GeometryUtil.ringArea(path) })
       }
       editor.on('adjust', sync)
       editor.on('addnode', sync)
@@ -305,7 +286,7 @@ export function useFenceManager({ map, AMap }) {
       setEditingId(id)
       map.setFitView([polygon], false, [80, 80, 80, 80])
     },
-    [map, AMap, drawing],
+    [map, AMap, drawing, onUpdate],
   )
 
   const stopEdit = useCallback(() => {
@@ -315,29 +296,28 @@ export function useFenceManager({ map, AMap }) {
     toast.success('顶点修改已保存')
   }, [])
 
-  // ---- 导出 ----
-  const exportFence = useCallback((id) => {
-    setFences((prev) => {
-      const fence = prev.find((f) => f.id === id)
+  // ---- 导出（仅当前模式）----
+  const exportFence = useCallback(
+    (id) => {
+      const fence = fences.find((f) => f.id === id)
       if (fence) {
         downloadGeoJSON(`${fence.code}-${fence.name}.geojson`, [fenceToFeature(fence)])
         toast.success(`已导出 ${fence.code}`)
       }
-      return prev
-    })
-  }, [])
+    },
+    [fences],
+  )
 
   const exportAll = useCallback(() => {
     if (fences.length === 0) {
-      toast.warning('没有可导出的围栏')
+      toast.warning('当前视图没有可导出的围栏')
       return
     }
-    downloadGeoJSON('geofences-all.geojson', fences.map(fenceToFeature))
-    toast.success(`已导出全部 ${fences.length} 条围栏`)
-  }, [fences])
+    downloadGeoJSON(`geofences-${mode}.geojson`, fences.map(fenceToFeature))
+    toast.success(`已导出当前视图全部 ${fences.length} 条围栏`)
+  }, [fences, mode])
 
   return {
-    fences,
     drawing,
     drawingStats,
     pendingName,

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { CoordsHud } from '@/components/CoordsHud'
@@ -12,12 +12,31 @@ import { Button } from '@/components/ui/button'
 import { hasAmapConfig } from '@/config/amap'
 import { useAmap } from '@/hooks/useAmap'
 import { useFenceManager } from '@/hooks/useFenceManager'
+import { useFenceStore } from '@/hooks/useFenceStore'
+
+const MODE_KEY = 'geofence-studio:mode'
+
+function loadMode() {
+  return localStorage.getItem(MODE_KEY) === 'rent' ? 'rent' : 'sale'
+}
 
 function Workbench() {
   const containerRef = useRef(null)
   const { map, AMap, status, error, coords, retry } = useAmap(containerRef)
+  const { fences, syncStatus, insertFence, updateFence, removeFence } = useFenceStore()
+
+  const [mode, setMode] = useState(loadMode)
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, mode)
+    } catch {
+      // 忽略
+    }
+  }, [mode])
+
+  const modeFences = useMemo(() => fences.filter((f) => f.mode === mode), [fences, mode])
+
   const {
-    fences,
     drawing,
     drawingStats,
     pendingName,
@@ -28,14 +47,22 @@ function Workbench() {
     confirmName,
     cancelName,
     renameFence,
-    removeFence,
+    removeFence: removeCurrentFence,
     clearAll,
     locateFence,
     startEdit,
     stopEdit,
     exportFence,
     exportAll,
-  } = useFenceManager({ map, AMap })
+  } = useFenceManager({
+    map,
+    AMap,
+    mode,
+    fences: modeFences,
+    onInsert: insertFence,
+    onUpdate: updateFence,
+    onRemove: removeFence,
+  })
 
   const [renaming, setRenaming] = useState(null) // { id, name }
 
@@ -71,12 +98,12 @@ function Workbench() {
         </div>
       )}
 
-      <TopBar AMap={AMap} map={map} />
+      <TopBar AMap={AMap} map={map} mode={mode} onModeChange={setMode} syncStatus={syncStatus} />
 
       <ToolRail
         drawing={Boolean(drawing)}
         editing={Boolean(editingId)}
-        hasFences={fences.length > 0}
+        hasFences={modeFences.length > 0}
         onStartDraw={startDrawing}
         onFinishDraw={requestFinish}
         onCancelDraw={cancelDrawing}
@@ -85,7 +112,8 @@ function Workbench() {
       />
 
       <FencePanel
-        fences={fences}
+        mode={mode}
+        fences={modeFences}
         editingId={editingId}
         onLocate={locateFence}
         onStartEdit={startEdit}
@@ -93,7 +121,7 @@ function Workbench() {
         onRename={(fence) => setRenaming({ id: fence.id, name: fence.name })}
         onExport={exportFence}
         onExportAll={exportAll}
-        onRemove={removeFence}
+        onRemove={removeCurrentFence}
       />
 
       <CoordsHud coords={coords} />

@@ -30,9 +30,10 @@ function ActionButton({ label, onClick, danger, children }) {
 }
 
 /**
- * 右侧围栏列表面板 —— 测量日志样式。
+ * 右侧围栏列表面板 —— 测量日志样式（按当前视图模式过滤）。
  */
 export function FencePanel({
+  mode,
   fences,
   editingId,
   onLocate,
@@ -43,13 +44,14 @@ export function FencePanel({
   onExportAll,
   onRemove,
 }) {
+  const modeLabel = mode === 'rent' ? '租赁' : '买卖'
   return (
     <aside className="hud-panel absolute bottom-4 right-4 top-[4.5rem] z-20 hidden w-[320px] flex-col md:flex">
       <div className="flex items-center justify-between px-4 pb-2.5 pt-3.5">
         <div className="flex items-baseline gap-2">
           <h2 className="text-sm font-semibold tracking-wide">测量日志</h2>
           <span className="font-mono text-[9px] tracking-[0.2em] text-muted-foreground">
-            SURVEY LOG
+            SURVEY LOG · {modeLabel}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -77,7 +79,7 @@ export function FencePanel({
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="w-full rounded-md border border-dashed border-hairline px-5 py-8 text-center">
             <Ruler className="mx-auto mb-3 h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-            <p className="text-sm text-foreground">还没有围栏记录</p>
+            <p className="text-sm text-foreground">还没有{modeLabel}围栏记录</p>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               点击左侧的绘制工具，
               <br />
