@@ -1,45 +1,47 @@
 /** @type {import('tailwindcss').Config} */
+const v = (name) => `rgb(var(${name}) / <alpha-value>)`
+
 export default {
   darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
       colors: {
-        background: '#0B0F14',
-        foreground: '#E6EDF3',
-        panel: '#131922',
+        background: v('--background'),
+        foreground: v('--foreground'),
+        panel: v('--panel'),
         card: {
-          DEFAULT: '#131922',
-          foreground: '#E6EDF3',
+          DEFAULT: v('--panel'),
+          foreground: v('--foreground'),
         },
         popover: {
-          DEFAULT: '#131922',
-          foreground: '#E6EDF3',
+          DEFAULT: v('--panel'),
+          foreground: v('--foreground'),
         },
         primary: {
           DEFAULT: '#FF5A1F',
-          foreground: '#0B0F14',
+          foreground: v('--primary-foreground'),
         },
         secondary: {
-          DEFAULT: '#1B2430',
-          foreground: '#E6EDF3',
+          DEFAULT: v('--secondary'),
+          foreground: v('--foreground'),
         },
         muted: {
-          DEFAULT: '#1B2430',
-          foreground: '#8B98A5',
+          DEFAULT: v('--muted'),
+          foreground: v('--muted-foreground'),
         },
         accent: {
-          DEFAULT: '#1E2833',
-          foreground: '#E6EDF3',
+          DEFAULT: v('--accent'),
+          foreground: v('--foreground'),
         },
         destructive: {
-          DEFAULT: '#E5484D',
-          foreground: '#E6EDF3',
+          DEFAULT: v('--destructive'),
+          foreground: v('--destructive-foreground'),
         },
-        success: '#3ECF8E',
-        hairline: '#26303B',
-        border: '#26303B',
-        input: '#26303B',
+        success: v('--success'),
+        hairline: v('--hairline'),
+        border: v('--hairline'),
+        input: v('--hairline'),
         ring: '#FF5A1F',
       },
       fontFamily: {

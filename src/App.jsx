@@ -9,10 +9,12 @@ import { SetupGuide } from '@/components/SetupGuide'
 import { ToolRail } from '@/components/ToolRail'
 import { TopBar } from '@/components/TopBar'
 import { Button } from '@/components/ui/button'
-import { hasAmapConfig } from '@/config/amap'
+import { AMAP_MAP_STYLE, AMAP_MAP_STYLE_LIGHT, hasAmapConfig } from '@/config/amap'
 import { useAmap } from '@/hooks/useAmap'
+import { useCity } from '@/hooks/useCity'
 import { useFenceManager } from '@/hooks/useFenceManager'
 import { useFenceStore } from '@/hooks/useFenceStore'
+import { useTheme } from '@/hooks/useTheme'
 
 const MODE_KEY = 'geofence-studio:mode'
 
@@ -20,10 +22,17 @@ function loadMode() {
   return localStorage.getItem(MODE_KEY) === 'rent' ? 'rent' : 'sale'
 }
 
-function Workbench() {
+function Workbench({ theme, resolvedTheme, onThemeCycle }) {
   const containerRef = useRef(null)
   const { map, AMap, status, error, coords, retry } = useAmap(containerRef)
   const { fences, syncStatus, insertFence, updateFence, removeFence } = useFenceStore()
+  const { city, setCity } = useCity({ map, AMap })
+
+  // 高德底图随主题联动：darkblue / whitesmoke，不重建地图
+  useEffect(() => {
+    if (!map) return
+    map.setMapStyle(resolvedTheme === 'dark' ? AMAP_MAP_STYLE : AMAP_MAP_STYLE_LIGHT)
+  }, [map, resolvedTheme])
 
   const [mode, setMode] = useState(loadMode)
   useEffect(() => {
@@ -98,7 +107,17 @@ function Workbench() {
         </div>
       )}
 
-      <TopBar AMap={AMap} map={map} mode={mode} onModeChange={setMode} syncStatus={syncStatus} />
+      <TopBar
+        AMap={AMap}
+        map={map}
+        mode={mode}
+        onModeChange={setMode}
+        syncStatus={syncStatus}
+        city={city}
+        onCityChange={setCity}
+        theme={theme}
+        onThemeCycle={onThemeCycle}
+      />
 
       <ToolRail
         drawing={Boolean(drawing)}
@@ -165,18 +184,20 @@ function Workbench() {
 }
 
 export default function App() {
+  const { theme, resolved, cycleTheme } = useTheme()
+
   if (!hasAmapConfig) {
     return (
       <>
         <SetupGuide />
-        <Toaster />
+        <Toaster theme={resolved} />
       </>
     )
   }
   return (
     <TooltipProvider delayDuration={250}>
-      <Workbench />
-      <Toaster />
+      <Workbench theme={theme} resolvedTheme={resolved} onThemeCycle={cycleTheme} />
+      <Toaster theme={resolved} />
     </TooltipProvider>
   )
 }

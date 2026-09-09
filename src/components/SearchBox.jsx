@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input'
 
 /**
  * 顶部搜索：AutoComplete 输入提示 + PlaceSearch POI 搜索。
- * @param {{ AMap: object|null, map: object|null }} props
+ * city 跟随当前城市，提示结果优先落在当前城市范围内。
+ * @param {{ AMap: object|null, map: object|null, city: { name: string }|null }} props
  */
-export function SearchBox({ AMap, map }) {
+export function SearchBox({ AMap, map, city }) {
   const [keyword, setKeyword] = useState('')
   const [tips, setTips] = useState([])
   const [results, setResults] = useState(null) // null=未搜索, []=无结果
@@ -22,6 +23,13 @@ export function SearchBox({ AMap, map }) {
     autoCompleteRef.current = new AMap.AutoComplete({ city: '全国', citylimit: false })
     placeSearchRef.current = new AMap.PlaceSearch({ pageSize: 8, pageIndex: 1 })
   }, [AMap])
+
+  // AutoComplete / PlaceSearch 的城市范围跟随当前城市
+  useEffect(() => {
+    if (!city?.name) return
+    autoCompleteRef.current?.setCity(city.name)
+    placeSearchRef.current?.setCity(city.name)
+  }, [city])
 
   useEffect(() => () => clearTimeout(blurTimerRef.current), [])
 

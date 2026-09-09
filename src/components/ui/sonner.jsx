@@ -1,15 +1,15 @@
 import { Toaster as Sonner } from 'sonner'
 
-function Toaster(props) {
+function Toaster({ theme = 'dark', ...props }) {
   return (
     <Sonner
-      theme="dark"
+      theme={theme}
       position="bottom-center"
       toastOptions={{
         style: {
-          background: '#131922',
-          border: '1px solid #26303B',
-          color: '#E6EDF3',
+          background: 'rgb(var(--panel))',
+          border: '1px solid rgb(var(--hairline))',
+          color: 'rgb(var(--foreground))',
           fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
         },
       }}

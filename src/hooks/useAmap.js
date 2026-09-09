@@ -1,8 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import AMapLoader from '@amap/amap-jsapi-loader'
-import { AMAP_KEY, AMAP_MAP_STYLE, AMAP_SECURITY_CODE } from '@/config/amap'
+import { AMAP_KEY, AMAP_MAP_STYLE, AMAP_MAP_STYLE_LIGHT, AMAP_SECURITY_CODE } from '@/config/amap'
 
-const PLUGINS = ['AMap.AutoComplete', 'AMap.PlaceSearch', 'AMap.PolygonEditor', 'AMap.GeometryUtil']
+const PLUGINS = [
+  'AMap.AutoComplete',
+  'AMap.PlaceSearch',
+  'AMap.PolygonEditor',
+  'AMap.GeometryUtil',
+  'AMap.CitySearch',
+  'AMap.Geolocation',
+]
+
+/** 初始底图风格跟随当前主题（主题脚本已在 index.html 头部执行） */
+function initialMapStyle() {
+  return document.documentElement.classList.contains('dark')
+    ? AMAP_MAP_STYLE
+    : AMAP_MAP_STYLE_LIGHT
+}
 
 /**
  * 加载高德 JS API 2.0 并初始化深色地图。
@@ -35,8 +49,8 @@ export function useAmap(containerRef) {
         map = new AMap.Map(containerRef.current, {
           viewMode: '2D',
           zoom: 11,
-          center: [116.397128, 39.916527],
-          mapStyle: AMAP_MAP_STYLE,
+          center: [121.4737, 31.2304],
+          mapStyle: initialMapStyle(),
         })
         mapRef.current = map
         handleMove = (e) => {

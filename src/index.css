@@ -5,6 +5,40 @@
 @tailwind utilities;
 
 @layer base {
+  /* 亮色 —— 白天的勘测图纸：微暖纸白底 + 墨色文字 */
+  :root {
+    --background: 247 245 240; /* #F7F5F0 纸白 */
+    --foreground: 26 32 40; /* #1A2028 墨色 */
+    --panel: 254 253 250; /* #FEFDFA 图纸面板 */
+    --secondary: 237 234 226; /* #EDEAE2 */
+    --muted: 237 234 226;
+    --muted-foreground: 93 106 118; /* #5D6A76 */
+    --accent: 233 229 219; /* #E9E5DB hover */
+    --hairline: 216 211 198; /* #D8D3C6 略深发丝线 */
+    --primary-foreground: 26 32 40;
+    --destructive: 214 53 59; /* #D6353B */
+    --destructive-foreground: 254 253 250;
+    --success: 22 133 90; /* #16855A 加深保证纸面对比度 */
+    --hud-shadow: 0 8px 30px rgba(26, 32, 40, 0.14);
+  }
+
+  /* 深色 —— 测绘仪器：墨蓝黑 + 测量橙 */
+  .dark {
+    --background: 11 15 20; /* #0B0F14 */
+    --foreground: 230 237 243; /* #E6EDF3 */
+    --panel: 19 25 34; /* #131922 */
+    --secondary: 27 36 48; /* #1B2430 */
+    --muted: 27 36 48;
+    --muted-foreground: 139 152 165; /* #8B98A5 */
+    --accent: 30 40 51; /* #1E2833 */
+    --hairline: 38 48 59; /* #26303B */
+    --primary-foreground: 11 15 20;
+    --destructive: 229 72 77; /* #E5484D */
+    --destructive-foreground: 230 237 243;
+    --success: 62 207 142; /* #3ECF8E */
+    --hud-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  }
+
   * {
     @apply border-hairline;
   }
@@ -35,11 +69,11 @@
     height: 8px;
   }
   ::-webkit-scrollbar-thumb {
-    background: #26303b;
+    background: rgb(var(--hairline));
     border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #35424f;
+    background: rgb(var(--muted-foreground) / 0.5);
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -48,7 +82,8 @@
 
 @layer utilities {
   .hud-panel {
-    @apply rounded-lg border border-hairline bg-panel/90 shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-md;
+    @apply rounded-lg border border-hairline bg-panel/90 backdrop-blur-md;
+    box-shadow: var(--hud-shadow);
   }
   .tabular {
     font-variant-numeric: tabular-nums;
