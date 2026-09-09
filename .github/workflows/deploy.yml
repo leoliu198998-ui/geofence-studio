@@ -1,0 +1,29 @@
+name: Deploy to CloudBase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Build
+        run: npm ci && npm run build
+
+      - name: Install CloudBase CLI
+        run: npm install -g @cloudbase/cli
+
+      - name: Login to Tencent Cloud
+        run: tcb login --key --secretId "${{ secrets.TENCENT_SECRET_ID }}" --secretKey "${{ secrets.TENCENT_SECRET_KEY }}"
+
+      - name: Deploy static hosting
+        run: tcb hosting deploy ./dist -e ${{ secrets.TCB_ENV_ID }}
