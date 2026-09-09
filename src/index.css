@@ -90,6 +90,43 @@
   }
 }
 
+@layer components {
+  /* 地图围栏名称标签：mono 编号 + 名称小胶囊，鼠标穿透，双主题自适应 */
+  .fence-label {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--hairline));
+    background: rgb(var(--panel) / 0.92);
+    color: rgb(var(--foreground));
+    box-shadow: var(--hud-shadow);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    transition:
+      opacity 150ms ease,
+      border-color 150ms ease;
+  }
+  .fence-label .label-code {
+    color: #ff5a1f;
+    font-weight: 600;
+  }
+  .fence-label.active {
+    border-color: #ff5a1f;
+  }
+  .fence-label.dimmed {
+    opacity: 0.15;
+  }
+  .fence-label.compact .label-name {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

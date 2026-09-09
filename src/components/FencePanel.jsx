@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Check, Crosshair, Download, PenLine, Ruler, Trash2, Type } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,8 +44,21 @@ export function FencePanel({
   onExport,
   onExportAll,
   onRemove,
+  hoveredId,
+  selectedId,
+  onHover,
+  onSelect,
 }) {
   const modeLabel = mode === 'rent' ? '租赁' : '买卖'
+
+  // 地图上点击围栏选中时，滚动到列表对应项
+  useEffect(() => {
+    if (!selectedId) return
+    document
+      .querySelector(`[data-fence-row="${selectedId}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [selectedId])
+
   return (
     <aside className="hud-panel absolute bottom-4 right-4 top-[4.5rem] z-20 hidden w-[320px] flex-col md:flex">
       <div className="flex items-center justify-between px-4 pb-2.5 pt-3.5">
@@ -97,10 +111,23 @@ export function FencePanel({
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => onLocate(fence.id)}
-                    onKeyDown={(e) => e.key === 'Enter' && onLocate(fence.id)}
+                    data-fence-row={fence.id}
+                    onClick={() => {
+                      onSelect?.(fence.id)
+                      onLocate(fence.id)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        onSelect?.(fence.id)
+                        onLocate(fence.id)
+                      }
+                    }}
+                    onMouseEnter={() => onHover?.(fence.id)}
+                    onMouseLeave={() => onHover?.(null)}
                     className={`group w-full cursor-pointer rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent/60 ${
                       editing ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+                    } ${selectedId === fence.id ? 'bg-accent/70 ring-1 ring-primary/50' : ''} ${
+                      hoveredId === fence.id ? 'bg-accent/60' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">

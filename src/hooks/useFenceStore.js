@@ -10,13 +10,27 @@ const MODE_PREFIX = { sale: 'S', rent: 'R' }
 /** HMR / 重复挂载下，云端迁移只尝试一次（普通拉取由 effect 的 cancelled 标志保护） */
 let migrationAttempted = false
 
+/** 去重：先按 id，再按 (mode, code, name)——覆盖历史双写产生的「同内容不同 id」重复行 */
+function dedupeFences(list) {
+  const byId = new Set()
+  const byContent = new Set()
+  return list.filter((f) => {
+    if (byId.has(f.id)) return false
+    byId.add(f.id)
+    const key = `${f.mode}|${f.code}|${f.name}`
+    if (byContent.has(key)) return false
+    byContent.add(key)
+    return true
+  })
+}
+
 function loadCache() {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
     const list = raw ? JSON.parse(raw) : []
     if (!Array.isArray(list)) return []
-    // 旧格式（无 mode 字段）默认归入买卖视图
-    return list.map((f) => ({ ...f, mode: f.mode === 'rent' ? 'rent' : 'sale' }))
+    // 旧格式（无 mode 字段）默认归入买卖视图；顺带清理历史重复
+    return dedupeFences(list.map((f) => ({ ...f, mode: f.mode === 'rent' ? 'rent' : 'sale' })))
   } catch {
     return []
   }
@@ -125,7 +139,7 @@ export function useFenceStore() {
           })
         }
       } else {
-        setFences(data.map(fromRow))
+        setFences(dedupeFences(data.map(fromRow)))
       }
     }
 

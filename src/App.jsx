@@ -45,6 +45,9 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
 
   const modeFences = useMemo(() => fences.filter((f) => f.mode === mode), [fences, mode])
 
+  const [hoveredFenceId, setHoveredFenceId] = useState(null)
+  const [selectedFenceId, setSelectedFenceId] = useState(null)
+
   const {
     drawing,
     drawingStats,
@@ -71,6 +74,10 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
     onInsert: insertFence,
     onUpdate: updateFence,
     onRemove: removeFence,
+    hoveredId: hoveredFenceId,
+    selectedId: selectedFenceId,
+    onHover: setHoveredFenceId,
+    onSelect: setSelectedFenceId,
   })
 
   const [renaming, setRenaming] = useState(null) // { id, name }
@@ -141,6 +148,10 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
         onExport={exportFence}
         onExportAll={exportAll}
         onRemove={removeCurrentFence}
+        hoveredId={hoveredFenceId}
+        selectedId={selectedFenceId}
+        onHover={setHoveredFenceId}
+        onSelect={setSelectedFenceId}
       />
 
       <CoordsHud coords={coords} />

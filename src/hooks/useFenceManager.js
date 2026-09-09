@@ -10,6 +10,9 @@ const FENCE_STYLE = {
   zIndex: 10,
 }
 
+const HOVER_STYLE = { ...FENCE_STYLE, strokeWeight: 2.5, strokeOpacity: 1, fillOpacity: 0.14 }
+const SELECTED_STYLE = { ...FENCE_STYLE, strokeWeight: 3, strokeOpacity: 1, fillOpacity: 0.18 }
+
 const DRAW_STYLE = {
   strokeColor: '#FF5A1F',
   strokeWeight: 2,
@@ -21,6 +24,20 @@ const DRAW_STYLE = {
   // 否则在已成形预览区域内单击/双击会被覆盖物拦截（无法加点、双击不收尾）
   bubble: true,
   zIndex: 50,
+}
+
+/** 标签缩放阈值：低于该 zoom 只显示编号 */
+const LABEL_COMPACT_ZOOM = 11
+
+/** 顶点均值近似视觉中心 */
+function pathCenter(path) {
+  let lng = 0
+  let lat = 0
+  for (const p of path) {
+    lng += p[0]
+    lat += p[1]
+  }
+  return [lng / path.length, lat / path.length]
 }
 
 /** 去掉双击结束产生的重复尾点 */
@@ -70,14 +87,31 @@ function downloadGeoJSON(filename, features) {
  *   onInsert: (f: object) => void, onUpdate: (id: string, patch: object) => void,
  *   onRemove: (id: string) => void }} args
  */
-export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, onRemove }) {
+export function useFenceManager({
+  map,
+  AMap,
+  mode,
+  fences,
+  onInsert,
+  onUpdate,
+  onRemove,
+  hoveredId = null,
+  selectedId = null,
+  onHover,
+  onSelect,
+}) {
   const [drawing, setDrawing] = useState(null) // { path: [[lng,lat]...], cursor: [lng,lat]|null }
   const [pendingName, setPendingName] = useState(null) // { path, area }
   const [editingId, setEditingId] = useState(null)
   const polygonsRef = useRef(new Map()) // id -> AMap.Polygon
+  const labelsRef = useRef(new Map()) // id -> { marker, el }
   const drawPolygonRef = useRef(null)
   const editorRef = useRef(null)
   const drawingRef = useRef(null)
+  const handlersRef = useRef({ onHover, onSelect })
+  useEffect(() => {
+    handlersRef.current = { onHover, onSelect }
+  }, [onHover, onSelect])
   useEffect(() => {
     drawingRef.current = drawing
   }, [drawing])
@@ -104,18 +138,105 @@ export function useFenceManager({ map, AMap, mode, fences, onInsert, onUpdate, o
       } else {
         const polygon = new AMap.Polygon({ ...FENCE_STYLE, path: fence.path })
         polygon.setMap(map)
-        polygon.on('click', () => map.setFitView([polygon], false, [60, 60, 60, 60]))
+        polygon.on('click', () => {
+          if (drawingRef.current) return // 绘制中不拦截落点
+          handlersRef.current.onSelect?.(fence.id)
+        })
+        polygon.on('mouseover', () => {
+          if (drawingRef.current) return
+          handlersRef.current.onHover?.(fence.id)
+        })
+        polygon.on('mouseout', () => handlersRef.current.onHover?.(null))
         store.set(fence.id, polygon)
       }
     }
   }, [map, AMap, fences])
 
+  // ---- 围栏名称标签同步（DOM content + CSS 变量，双主题自适应，鼠标穿透）----
+  useEffect(() => {
+    if (!map || !AMap) return
+    const labels = labelsRef.current
+    const ids = new Set(fences.map((f) => f.id))
+
+    for (const [id, rec] of labels) {
+      if (!ids.has(id)) {
+        rec.marker.setMap(null)
+        labels.delete(id)
+      }
+    }
+    for (const fence of fences) {
+      const center = pathCenter(fence.path)
+      const rec = labels.get(fence.id)
+      if (rec) {
+        rec.marker.setPosition(center)
+        if (rec.code !== fence.code || rec.name !== fence.name) {
+          rec.el.querySelector('.label-code').textContent = fence.code
+          rec.el.querySelector('.label-name').textContent = fence.name
+          rec.code = fence.code
+          rec.name = fence.name
+        }
+      } else {
+        const el = document.createElement('div')
+        el.className = 'fence-label'
+        const code = document.createElement('span')
+        code.className = 'label-code'
+        code.textContent = fence.code
+        const name = document.createElement('span')
+        name.className = 'label-name'
+        name.textContent = fence.name
+        el.append(code, name)
+        const marker = new AMap.Marker({
+          position: center,
+          content: el,
+          anchor: 'center',
+          bubble: true,
+          zIndex: 40,
+        })
+        marker.setMap(map)
+        labels.set(fence.id, { marker, el, code: fence.code, name: fence.name })
+      }
+    }
+  }, [map, AMap, fences])
+
+  // ---- 标签随缩放降级：zoom < 阈值只显示编号 ----
+  useEffect(() => {
+    if (!map) return undefined
+    const apply = () => {
+      const compact = map.getZoom() < LABEL_COMPACT_ZOOM
+      for (const rec of labelsRef.current.values()) {
+        rec.el.classList.toggle('compact', compact)
+      }
+    }
+    map.on('zoomend', apply)
+    apply()
+    return () => map.off('zoomend', apply)
+  }, [map])
+
+  // ---- 高亮联动 + 绘制/编辑时标签降透明度 ----
+  useEffect(() => {
+    const dimmed = Boolean(drawing) || Boolean(editingId)
+    for (const [id, rec] of labelsRef.current) {
+      rec.el.classList.toggle('active', id === hoveredId || id === selectedId)
+      rec.el.classList.toggle('dimmed', dimmed)
+    }
+    for (const [id, polygon] of polygonsRef.current) {
+      let style = FENCE_STYLE
+      if (id === selectedId) style = SELECTED_STYLE
+      else if (id === hoveredId) style = HOVER_STYLE
+      // 绘制中已保存多边形事件穿透（bubble），让落点/双击到达地图
+      polygon.setOptions({ ...style, bubble: Boolean(drawing) })
+    }
+  }, [hoveredId, selectedId, drawing, editingId, fences])
+
   // 卸载时清理
   useEffect(() => {
     const store = polygonsRef.current
+    const labels = labelsRef.current
     return () => {
       for (const polygon of store.values()) polygon.setMap(null)
       store.clear()
+      for (const rec of labels.values()) rec.marker.setMap(null)
+      labels.clear()
       editorRef.current?.close()
       drawPolygonRef.current?.setMap(null)
     }
