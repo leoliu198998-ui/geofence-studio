@@ -76,6 +76,7 @@ export function useFenceManager({
   const [drawing, setDrawing] = useState(null) // { path: [[lng,lat]...], cursor: [lng,lat]|null }
   const [pendingName, setPendingName] = useState(null) // { path, area }
   const [editingId, setEditingId] = useState(null)
+  const [editBackup, setEditBackup] = useState(null) // { id, path, area }——进入编辑时的原始形状，用于取消回滚
   const polygonsRef = useRef(new Map()) // id -> AMap.Polygon
   const labelsRef = useRef(new Map()) // id -> { marker, el }
   const drawPolygonRef = useRef(null)
@@ -399,7 +400,6 @@ export function useFenceManager({
   )
 
   // ---- 顶点编辑 ----
-  const [editBackup, setEditBackup] = useState(null) // { id, path, area }——进入编辑时的原始形状，用于取消回滚
   const startEdit = useCallback(
     (id) => {
       if (!map || !AMap || drawing) return
