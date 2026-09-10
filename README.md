@@ -13,7 +13,7 @@
 - **首次迁移**：若本地存有旧版（v1）围栏数据而云端为空，自动上传迁移到买卖视图（仅提示一次）
 - **围栏管理**：命名保存、重命名、`AMap.PolygonEditor` 顶点编辑、删除、点击定位（fitView）
 - **小区搜索**：`AMap.AutoComplete` 输入提示 + `AMap.PlaceSearch` POI 搜索，点击结果飞行定位并打点；提示范围跟随当前城市
-- **GeoJSON 导出**：按当前视图导出 FeatureCollection（`properties` 含 name / code / mode / 面积 / 顶点数 / 创建时间），单条围栏可单独导出
+- **Excel 导入/导出**：导出为与「运营区围栏清单」模板一致的 .xlsx（SheetJS），按当前视图过滤，单条围栏可单独导出；支持从模板 xlsx 批量导入，预览确认后写入云端
 - **实时经纬度**：右下角 HUD 随鼠标移动实时读数，精确到小数点后 6 位
 - **缺 Key 引导页**：未配置高德环境变量时不白屏，显示接入指引
 
@@ -91,36 +91,29 @@ npm run lint    # oxlint
 
 4. **跨设备同步**：表已加入 `supabase_realtime` publication，任一端增删改，其他在线设备秒级自动刷新，并有 toast 提示（如"租赁视图新增围栏 R-003（来自其他设备）"）
 
-## 导出格式
+## 导入 / 导出（Excel）
 
-导出为 UTF-8 编码的 GeoJSON 文件（`FeatureCollection`），按当前视图过滤：
+导入与导出都针对「运营区围栏清单」模板格式（SheetJS / `xlsx` 解析与生成）：
 
-```json
-{
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "properties": {
-        "name": "望京 SOHO 周边围栏",
-        "code": "S-001",
-        "mode": "sale",
-        "area": 512340,
-        "vertexCount": 6,
-        "createdAt": "2026-09-09T10:30:00.000Z"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [[[116.48, 39.996], [116.49, 39.996], [116.48, 39.996]]]
-      }
-    }
-  ]
-}
-```
+| 列 | 说明 |
+| --- | --- |
+| `事业部` | 导出时留空（应用内无此数据） |
+| `对应区域` | 围栏名称 |
+| `细化四至` | 围栏名称（与对应区域同值；导入时若与对应区域不同则优先用作名称） |
+| `point_id（点位 ID）` | 顶点顺序，从 0 递增 |
+| `longitude（经度）` / `latitude（纬度）` | GCJ-02 坐标（与高德地图一致），一行一个顶点 |
 
-- `area`：平方米（由 `AMap.GeometryUtil.ringArea` 计算）
-- 坐标环首尾闭合（首尾点重复），GCJ-02 坐标系（与高德地图一致）
-- 文件名：买卖视图 `geofences-sale.geojson`，租赁视图 `geofences-rent.geojson`；单条导出 `S-001-名称.geojson`
+**导入**（右侧面板「导入」按钮，选择 .xlsx）：
+
+- 每个唯一的「细化四至」解析为一个多边形，顶点按 point_id 升序；相同坐标去重后不足 3 个顶点的条目视为无效，跳过并在预览中注明原因
+- 预览对话框列出每条围栏的名称、推断视图、顶点数、面积预估；可统一切换导入目标视图（按名称推断 / 买卖 / 租赁，名称含「买卖」「租赁」自动推断，否则默认当前视图）
+- 确认后批量写入云端（编号自动续 S- / R-），toast 汇总成功/跳过条数，并 fitView 展示导入结果
+
+**导出**：
+
+- 导出全部（当前视图）：`运营区围栏清单-买卖.xlsx` / `运营区围栏清单-租赁.xlsx`
+- 单条导出：`S-001-名称.xlsx`
+- sheet 名固定为 `运营区围栏清单`
 
 ## 技术栈
 
@@ -128,6 +121,7 @@ npm run lint    # oxlint
 - Tailwind CSS v3 + shadcn/ui 风格组件（Radix UI 原语，sonner 通知，lucide 图标）
 - `@amap/amap-jsapi-loader` 加载高德 JS API 2.0
 - `@supabase/supabase-js`（数据 + Realtime）
+- `xlsx`（SheetJS，围栏清单 Excel 导入/导出）
 
 ## 项目结构
 
@@ -141,8 +135,7 @@ src/
 │   ├── useCity.js          # 城市定位：记忆 > CitySearch > 默认上海 + Geolocation
 │   ├── useTheme.js         # dark / light / system 三态主题
 │   ├── useFenceStore.js    # 数据层：云端为主 + 本地缓存 + Realtime + 首次迁移
-│   └── useFenceManager.js  # 地图交互：绘制/顶点编辑/定位/导出（按当前视图）
-├── data/
+│   └── useFenceManager.js  # 地图交互：绘制/顶点编辑/定位/导出（按当前视图）├── data/
 │   └── cities.js           # 内置一二线城市数据（拼音/区号/adcode/中心点）
 ├── components/
 │   ├── ui/                 # shadcn 风格基础组件
@@ -156,8 +149,9 @@ src/
 │   ├── DrawHud.jsx         # 绘制中实时面积/周长 HUD
 │   ├── CoordsHud.jsx       # 右下角经纬度读数
 │   ├── NameDialog.jsx      # 命名/重命名对话框
+│   ├── ImportPreviewDialog.jsx  # Excel 导入预览（有效条目 + 跳过原因 + 目标视图切换）
 │   └── SetupGuide.jsx      # 缺 Key 接入引导页
-├── lib/                    # cn()、格式化工具
+├── lib/                    # cn()、格式化工具、excel.js（围栏清单解析/导出）
 └── App.jsx
 supabase/
 └── migrations/             # 建表 migration（RLS + Realtime）

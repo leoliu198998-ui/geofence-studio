@@ -205,6 +205,39 @@ export function useFenceStore() {
     return fence
   }, [syncStatus])
 
+  /** 批量导入：编号在一次调用内顺序递增，云端单次 insert */
+  const insertFences = useCallback(
+    (items) => {
+      if (!items.length) return []
+      const running = [...fencesRef.current]
+      const created = items.map((item) => {
+        const fence = {
+          id: crypto.randomUUID(),
+          mode: item.mode,
+          code: nextCode(running, item.mode),
+          name: (item.name || '').trim() || '未命名围栏',
+          path: item.path,
+          area: item.area,
+          createdAt: new Date().toISOString(),
+        }
+        running.push(fence)
+        return fence
+      })
+      created.forEach((f) => localOpsRef.current.add(f.id))
+      setFences((prev) => [...prev, ...created])
+      if (supabase && syncStatus !== 'offline') {
+        supabase
+          .from('fences')
+          .insert(created.map(toRow))
+          .then(({ error }) => {
+            if (error) toast.error('云端写入失败，导入的围栏仅保存在本机')
+          })
+      }
+      return created
+    },
+    [syncStatus],
+  )
+
   const updateFence = useCallback(
     (id, patch) => {
       localOpsRef.current.add(id)
@@ -246,5 +279,5 @@ export function useFenceStore() {
     [syncStatus],
   )
 
-  return { fences, syncStatus, insertFence, updateFence, removeFence }
+  return { fences, syncStatus, insertFence, insertFences, updateFence, removeFence }
 }

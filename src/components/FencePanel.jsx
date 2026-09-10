@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Check, Crosshair, Download, PenLine, Ruler, Trash2, Type } from 'lucide-react'
+import { Check, Crosshair, Download, PenLine, Ruler, Trash2, Type, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -43,6 +43,7 @@ export function FencePanel({
   onRename,
   onExport,
   onExportAll,
+  onImport,
   onRemove,
   hoveredId,
   selectedId,
@@ -74,6 +75,14 @@ export function FencePanel({
           </Badge>
           <Tooltip>
             <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="导入围栏 Excel" onClick={onImport}>
+                <Upload className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">导入 Excel (.xlsx)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -84,7 +93,7 @@ export function FencePanel({
                 <Download className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="left">导出全部 (GeoJSON)</TooltipContent>
+            <TooltipContent side="left">导出全部 (Excel)</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -153,7 +162,7 @@ export function FencePanel({
                             <ActionButton label="重命名" onClick={() => onRename(fence)}>
                               <Type />
                             </ActionButton>
-                            <ActionButton label="导出 GeoJSON" onClick={() => onExport(fence.id)}>
+                            <ActionButton label="导出 Excel" onClick={() => onExport(fence.id)}>
                               <Download />
                             </ActionButton>
                             <ActionButton label="删除" danger onClick={() => onRemove(fence.id)}>

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster } from '@/components/ui/sonner'
 import { CoordsHud } from '@/components/CoordsHud'
 import { DrawHud } from '@/components/DrawHud'
 import { FencePanel } from '@/components/FencePanel'
+import { ImportPreviewDialog } from '@/components/ImportPreviewDialog'
 import { NameDialog } from '@/components/NameDialog'
 import { SetupGuide } from '@/components/SetupGuide'
 import { ToolRail } from '@/components/ToolRail'
@@ -15,6 +17,7 @@ import { useCity } from '@/hooks/useCity'
 import { useFenceManager } from '@/hooks/useFenceManager'
 import { useFenceStore } from '@/hooks/useFenceStore'
 import { useTheme } from '@/hooks/useTheme'
+import { parseFenceWorkbook } from '@/lib/excel'
 
 const MODE_KEY = 'geofence-studio:mode'
 
@@ -25,7 +28,7 @@ function loadMode() {
 function Workbench({ theme, resolvedTheme, onThemeCycle }) {
   const containerRef = useRef(null)
   const { map, AMap, status, error, coords, retry } = useAmap(containerRef)
-  const { fences, syncStatus, insertFence, updateFence, removeFence } = useFenceStore()
+  const { fences, syncStatus, insertFence, insertFences, updateFence, removeFence } = useFenceStore()
   const { city, setCity } = useCity({ map, AMap })
 
   // 高德底图随主题联动：darkblue / whitesmoke，不重建地图
@@ -62,6 +65,7 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
     removeFence: removeCurrentFence,
     clearAll,
     locateFence,
+    locateFences,
     startEdit,
     stopEdit,
     exportFence,
@@ -81,6 +85,62 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
   })
 
   const [renaming, setRenaming] = useState(null) // { id, name }
+
+  // ---- Excel 导入 ----
+  const fileInputRef = useRef(null)
+  const [importPreview, setImportPreview] = useState(null) // { entries, skipped }
+  const pendingFitRef = useRef(null)
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const buf = await file.arrayBuffer()
+      const { entries, skipped } = parseFenceWorkbook(buf, mode)
+      const withArea = entries.map((en) => ({
+        ...en,
+        area: AMap ? AMap.GeometryUtil.ringArea(en.path) : null,
+      }))
+      if (withArea.length === 0 && skipped.length === 0) {
+        toast.warning('文件里没有可识别的围栏数据')
+        return
+      }
+      setImportPreview({ entries: withArea, skipped })
+    } catch (err) {
+      toast.error(`解析失败：${err.message}`)
+    }
+  }
+
+  const handleImportConfirm = (target) => {
+    const { entries, skipped } = importPreview
+    const items = entries.map((en) => ({
+      mode: target === 'auto' ? en.mode : target,
+      name: en.name,
+      path: en.path,
+      area: en.area ?? undefined,
+    }))
+    const created = insertFences(items)
+    setImportPreview(null)
+    toast.success(
+      `导入完成：成功 ${created.length} 条${skipped.length ? ` / 跳过 ${skipped.length} 条` : ''}`,
+    )
+    if (created.length === 0) return
+    // 导入目标与当前视图不一致时切过去，并 fitView 展示导入结果
+    const targetMode = created[0].mode
+    if (created.every((f) => f.mode === targetMode) && targetMode !== mode) setMode(targetMode)
+    pendingFitRef.current = created.map((f) => f.id)
+  }
+
+  // 多边形同步完成后 fitView 到导入的围栏
+  useEffect(() => {
+    const ids = pendingFitRef.current
+    if (!ids) return
+    const visible = ids.filter((id) => modeFences.some((f) => f.id === id))
+    if (visible.length === 0) return
+    locateFences(visible)
+    pendingFitRef.current = null
+  }, [modeFences, locateFences])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
@@ -147,6 +207,7 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
         onRename={(fence) => setRenaming({ id: fence.id, name: fence.name })}
         onExport={exportFence}
         onExportAll={exportAll}
+        onImport={() => fileInputRef.current?.click()}
         onRemove={removeCurrentFence}
         hoveredId={hoveredFenceId}
         selectedId={selectedFenceId}
@@ -189,6 +250,23 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
           setRenaming(null)
         }}
         onClose={() => setRenaming(null)}
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        aria-label="选择围栏 Excel 文件"
+        onChange={handleImportFile}
+      />
+
+      <ImportPreviewDialog
+        open={Boolean(importPreview)}
+        entries={importPreview?.entries}
+        skipped={importPreview?.skipped}
+        onConfirm={handleImportConfirm}
+        onClose={() => setImportPreview(null)}
       />
     </div>
   )

@@ -68,7 +68,7 @@ export function ToolRail({ drawing, editing, hasFences, onStartDraw, onFinishDra
         </ToolButton>
       )}
       <div className="mx-2 my-0.5 h-px bg-hairline" />
-      <ToolButton label="导出全部围栏 (GeoJSON)" onClick={onExportAll} disabled={!hasFences}>
+      <ToolButton label="导出全部围栏 (Excel)" onClick={onExportAll} disabled={!hasFences}>
         <Download />
       </ToolButton>
       <ToolButton

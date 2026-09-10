@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { downloadFencesXlsx } from '@/lib/excel'
+import { MODE_LABEL } from '@/hooks/useFenceStore'
 
 const FENCE_STYLE = {
   strokeColor: '#FF5A1F',
@@ -49,35 +51,6 @@ function dedupeTail(path) {
     out.push(p)
   }
   return out
-}
-
-function fenceToFeature(f) {
-  const ring = [...f.path, f.path[0]]
-  return {
-    type: 'Feature',
-    properties: {
-      name: f.name,
-      code: f.code,
-      mode: f.mode,
-      area: Math.round(f.area),
-      vertexCount: f.path.length,
-      createdAt: f.createdAt,
-    },
-    geometry: { type: 'Polygon', coordinates: [ring] },
-  }
-}
-
-function downloadGeoJSON(filename, features) {
-  const collection = { type: 'FeatureCollection', features }
-  const blob = new Blob([JSON.stringify(collection, null, 2)], {
-    type: 'application/geo+json;charset=utf-8',
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 /**
@@ -412,6 +385,18 @@ export function useFenceManager({
     [map],
   )
 
+  /** 批量定位：fitView 到一组围栏（忽略当前视图外的 id） */
+  const locateFences = useCallback(
+    (ids) => {
+      if (!map) return
+      const polygons = ids
+        .map((id) => polygonsRef.current.get(id))
+        .filter(Boolean)
+      if (polygons.length) map.setFitView(polygons, false, [80, 80, 80, 80])
+    },
+    [map],
+  )
+
   // ---- 顶点编辑 ----
   const startEdit = useCallback(
     (id) => {
@@ -442,12 +427,12 @@ export function useFenceManager({
     toast.success('顶点修改已保存')
   }, [])
 
-  // ---- 导出（仅当前模式）----
+  // ---- 导出（仅当前模式，xlsx，格式同运营区围栏清单模板）----
   const exportFence = useCallback(
     (id) => {
       const fence = fences.find((f) => f.id === id)
       if (fence) {
-        downloadGeoJSON(`${fence.code}-${fence.name}.geojson`, [fenceToFeature(fence)])
+        downloadFencesXlsx([fence], `${fence.code}-${fence.name}.xlsx`)
         toast.success(`已导出 ${fence.code}`)
       }
     },
@@ -459,7 +444,7 @@ export function useFenceManager({
       toast.warning('当前视图没有可导出的围栏')
       return
     }
-    downloadGeoJSON(`geofences-${mode}.geojson`, fences.map(fenceToFeature))
+    downloadFencesXlsx(fences, `运营区围栏清单-${MODE_LABEL[mode] || mode}.xlsx`)
     toast.success(`已导出当前视图全部 ${fences.length} 条围栏`)
   }, [fences, mode])
 
@@ -477,6 +462,7 @@ export function useFenceManager({
     removeFence,
     clearAll,
     locateFence,
+    locateFences,
     startEdit,
     stopEdit,
     exportFence,
