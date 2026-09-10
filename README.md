@@ -115,19 +115,20 @@ VITE_SUPABASE_ANON_KEY=<本地 anon key，用 supabase status -o env 查看>
 
 ## 导入 / 导出（Excel）
 
-导入与导出都针对「运营区围栏清单」模板格式（SheetJS / `xlsx` 解析与生成）：
+导入与导出都围绕「运营区围栏清单」格式（SheetJS / `xlsx` 解析与生成）。
+
+**导出为四列**：
 
 | 列 | 说明 |
 | --- | --- |
-| `事业部` | 导出时留空（应用内无此数据） |
 | `对应区域` | 围栏名称 |
-| `细化四至` | 围栏名称（与对应区域同值；导入时若与对应区域不同则优先用作名称） |
-| `point_id（点位 ID）` | 顶点顺序，从 0 递增 |
+| `point_id（点位 ID）` | 顶点顺序，每条围栏从 0 递增 |
 | `longitude（经度）` / `latitude（纬度）` | GCJ-02 坐标（与高德地图一致），一行一个顶点 |
 
 **导入**（右侧面板「导入」按钮，选择 .xlsx）：
 
-- 每个唯一的「细化四至」解析为一个多边形，顶点按 point_id 升序；相同坐标去重后不足 3 个顶点的条目视为无效，跳过并在预览中注明原因
+- 兼容完整模板（含事业部/细化四至列）与四列导出文件：每个唯一的「细化四至」解析为一个多边形（无细化四至列时按「对应区域」分组），顶点按 point_id 升序；相同坐标去重后不足 3 个顶点的条目视为无效，跳过并在预览中注明原因
+- 名称规则：细化四至与对应区域相同时用对应区域，否则用细化四至
 - 预览对话框列出每条围栏的名称、推断视图、顶点数、面积预估；可统一切换导入目标视图（按名称推断 / 买卖 / 租赁，名称含「买卖」「租赁」自动推断，否则默认当前视图）
 - 确认后批量写入云端（编号自动续 S- / R-），toast 汇总成功/跳过条数，并 fitView 展示导入结果
 
@@ -137,6 +138,27 @@ VITE_SUPABASE_ANON_KEY=<本地 anon key，用 supabase status -o env 查看>
 - 单条导出：`S-001-名称.xlsx`
 - sheet 名固定为 `运营区围栏清单`
 
+## 测试
+
+```bash
+npm run test        # 跑一遍（等同 test:run）
+npm run test:run    # CI 用单次运行
+npm run test:watch  # watch 模式
+```
+
+Vitest + Testing Library（jsdom），测试与源码就近放置在同级 `__tests__/` 目录：
+
+| 区域 | 覆盖点 |
+| --- | --- |
+| `lib/excel.js` | 模板解析（分组/排序/脏数据跳过/视图推断/列回退）、四列导出格式、导入↔导出 round-trip |
+| `hooks/useFenceStore.js` | 本地缓存去重（id 与 mode\|code\|name 复合键）、编号递增与批量续号、增删改持久化、云端加载去重与离线降级（Supabase 整体 mock） |
+| `hooks/useAuth.js` | 密码哈希（与 migration 默认 admin 对拍）、登录成败路径、会话复核、改密、账号维护保护规则 |
+| `hooks/useTheme.js` | 三态循环、localStorage 持久化、matchMedia 跟随系统 |
+| `data/cities.js` | 中文/拼音/区号/adcode 模糊匹配 |
+| 组件 smoke | ModeSwitch、ImportPreviewDialog、LoginPage |
+
+覆盖边界：高德 AMap 相关 hook（`useAmap` / `useFenceManager`）依赖真实地图实例，不在单测范围内，以浏览器实测（ego-browser）为准；`useCity` 同理（依赖 AMap 插件）。
+
 ## 技术栈
 
 - Vite + React 19（JavaScript，`jsconfig.json` 配置 `@` 路径别名）
@@ -144,6 +166,7 @@ VITE_SUPABASE_ANON_KEY=<本地 anon key，用 supabase status -o env 查看>
 - `@amap/amap-jsapi-loader` 加载高德 JS API 2.0
 - `@supabase/supabase-js`（数据 + Realtime）
 - `xlsx`（SheetJS，围栏清单 Excel 导入/导出）
+- Vitest + Testing Library（jsdom）测试
 
 ## 项目结构
 
@@ -175,6 +198,8 @@ src/
 │   └── SetupGuide.jsx      # 缺 Key 接入引导页
 ├── lib/                    # cn()、格式化工具、excel.js（围栏清单解析/导出）
 └── App.jsx
+src/test/
+└── setup.js                # jest-dom 断言 + jsdom 补齐 Web Crypto
 supabase/
 └── migrations/             # 建表 migration（RLS + Realtime）
 ```
