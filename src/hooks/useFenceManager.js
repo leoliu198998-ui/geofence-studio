@@ -222,6 +222,7 @@ export function useFenceManager({
     setDrawing(null)
     setPendingName(null)
     setEditingId(null)
+    setEditBackup(null)
   }
   useEffect(() => {
     if (!editingId && editorRef.current) {
@@ -398,12 +399,15 @@ export function useFenceManager({
   )
 
   // ---- 顶点编辑 ----
+  const [editBackup, setEditBackup] = useState(null) // { id, path, area }——进入编辑时的原始形状，用于取消回滚
   const startEdit = useCallback(
     (id) => {
       if (!map || !AMap || drawing) return
       const polygon = polygonsRef.current.get(id)
-      if (!polygon) return
+      const fence = fences.find((f) => f.id === id)
+      if (!polygon || !fence) return
       if (editorRef.current) editorRef.current.close()
+      setEditBackup({ id, path: fence.path.map((p) => [...p]), area: fence.area })
       const editor = new AMap.PolygonEditor(map, polygon)
       const sync = () => {
         const path = polygon.getPath().map((p) => [p.getLng(), p.getLat()])
@@ -417,15 +421,38 @@ export function useFenceManager({
       setEditingId(id)
       map.setFitView([polygon], false, [80, 80, 80, 80])
     },
-    [map, AMap, drawing, onUpdate],
+    [map, AMap, drawing, fences, onUpdate],
   )
 
   const stopEdit = useCallback(() => {
     editorRef.current?.close()
     editorRef.current = null
+    setEditBackup(null)
     setEditingId(null)
     toast.success('顶点修改已保存')
   }, [])
+
+  /** 取消编辑：回滚到进入编辑时的形状（编辑期间每次拖动都已实时保存，需显式恢复） */
+  const cancelEdit = useCallback(() => {
+    editorRef.current?.close()
+    editorRef.current = null
+    setEditingId(null)
+    if (editBackup) {
+      onUpdate(editBackup.id, { path: editBackup.path, area: editBackup.area })
+      setEditBackup(null)
+      toast.info('已取消编辑，围栏恢复原样')
+    }
+  }, [editBackup, onUpdate])
+
+  // 编辑中按 Esc 取消（与绘制模式一致）
+  useEffect(() => {
+    if (!editingId) return undefined
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') cancelEdit()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [editingId, cancelEdit])
 
   // ---- 导出（仅当前模式，xlsx，格式同运营区围栏清单模板）----
   const exportFence = useCallback(
@@ -465,6 +492,7 @@ export function useFenceManager({
     locateFences,
     startEdit,
     stopEdit,
+    cancelEdit,
     exportFence,
     exportAll,
   }

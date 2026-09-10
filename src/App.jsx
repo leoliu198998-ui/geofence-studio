@@ -21,6 +21,7 @@ import { useFenceManager } from '@/hooks/useFenceManager'
 import { useFenceStore } from '@/hooks/useFenceStore'
 import { useTheme } from '@/hooks/useTheme'
 import { parseFenceWorkbook } from '@/lib/excel'
+import { canEdit } from '@/lib/permissions'
 
 const MODE_KEY = 'geofence-studio:mode'
 
@@ -33,6 +34,10 @@ function Workbench({ theme, resolvedTheme, onThemeCycle, auth }) {
   const { map, AMap, status, error, coords, retry } = useAmap(containerRef)
   const { fences, syncStatus, insertFence, insertFences, updateFence, removeFence } = useFenceStore()
   const { city, setCity } = useCity({ map, AMap })
+
+  // 纯本地模式（未配置 Supabase）不做权限约束；登录模式按角色门控
+  const role = auth?.enabled ? auth.user?.role : 'admin'
+  const canEditData = canEdit(role)
 
   // 高德底图随主题联动：darkblue / whitesmoke，不重建地图
   useEffect(() => {
@@ -71,6 +76,7 @@ function Workbench({ theme, resolvedTheme, onThemeCycle, auth }) {
     locateFences,
     startEdit,
     stopEdit,
+    cancelEdit,
     exportFence,
     exportAll,
   } = useFenceManager({
@@ -192,20 +198,23 @@ function Workbench({ theme, resolvedTheme, onThemeCycle, auth }) {
         onChangePassword={auth?.changePassword}
       />
 
-      <ToolRail
-        drawing={Boolean(drawing)}
-        editing={Boolean(editingId)}
-        hasFences={modeFences.length > 0}
-        onStartDraw={startDrawing}
-        onFinishDraw={requestFinish}
-        onCancelDraw={cancelDrawing}
-        onExportAll={exportAll}
-        onClearAll={clearAll}
-      />
+      {canEditData && (
+        <ToolRail
+          drawing={Boolean(drawing)}
+          editing={Boolean(editingId)}
+          hasFences={modeFences.length > 0}
+          onStartDraw={startDrawing}
+          onFinishDraw={requestFinish}
+          onCancelDraw={cancelDrawing}
+          onExportAll={exportAll}
+          onClearAll={clearAll}
+        />
+      )}
 
       <FencePanel
         mode={mode}
         fences={modeFences}
+        canEdit={canEditData}
         editingId={editingId}
         onLocate={locateFence}
         onStartEdit={startEdit}
@@ -230,7 +239,10 @@ function Workbench({ theme, resolvedTheme, onThemeCycle, auth }) {
       {editingId && !drawing && (
         <div className="hud-panel absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 px-4 py-2 animate-slide-up">
           <span className="font-mono text-xs text-primary">正在编辑顶点</span>
-          <span className="text-[11px] text-muted-foreground">拖动白色锚点调整边界</span>
+          <span className="text-[11px] text-muted-foreground">拖动白色锚点调整边界 · Esc 取消</span>
+          <Button size="sm" variant="outline" onClick={cancelEdit}>
+            取消
+          </Button>
           <Button size="sm" variant="success" onClick={stopEdit}>
             完成编辑
           </Button>

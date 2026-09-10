@@ -1,112 +1,124 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { hasSupabaseConfig, supabase } from '@/config/supabase'
+import { isRole } from '@/lib/permissions'
 
-const SESSION_KEY = 'geofence-studio:session'
-const SALT = 'geofence-studio:v1:'
-const USERNAME_RE = /^[a-zA-Z0-9_.-]{2,32}$/
+/** 用户名 → Supabase Auth 内部伪邮箱（Auth 原生邮箱制，用户名体系映射到 @geofence.local 域） */
+export const emailOf = (username) => `${username}@geofence.local`
+const LEGACY_SESSION_KEY = 'geofence-studio:session' // 自建 users 表时代的会话，迁移后清理
 
-/** SHA-256(盐 + 明文) 十六进制；盐值与 users 表迁移脚本中的约定保持一致 */
-export async function hashPassword(password) {
-  const data = new TextEncoder().encode(SALT + password)
-  const buf = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-const fromRow = (r) => ({
-  id: r.id,
-  username: r.username,
-  displayName: r.display_name || r.username,
-  createdAt: r.created_at,
+const fromProfile = (p) => ({
+  id: p.id,
+  username: p.username,
+  displayName: p.display_name || p.username,
+  role: isRole(p.role) ? p.role : 'viewer', // 未知角色按最小权限处理
+  createdAt: p.created_at,
 })
 
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY)
-    const s = raw ? JSON.parse(raw) : null
-    return s && typeof s.username === 'string' ? s : null
-  } catch {
-    return null
-  }
+async function fetchProfile(userId) {
+  const { data } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle()
+  return data ? fromProfile(data) : null
 }
 
-function saveSession(s) {
-  try {
-    if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s))
-    else localStorage.removeItem(SESSION_KEY)
-  } catch {
-    // 忽略
+/** 调用 account-admin Edge Function，统一把错误映射成中文提示 */
+async function invokeAdmin(action, payload) {
+  const { data, error } = await supabase.functions.invoke('account-admin', {
+    body: { action, payload },
+  })
+  if (error) {
+    try {
+      const body = await error.context.json()
+      return body?.error || '操作失败，请稍后重试'
+    } catch {
+      return '操作失败，请稍后重试'
+    }
   }
+  return data?.error ?? null
 }
 
 /**
- * 登录态：Supabase users 表校验 + localStorage 会话。
+ * 登录态：Supabase Auth（JWT 会话由 SDK 持久化/续期）+ profiles 表提供用户名与角色。
  * 未配置 Supabase 时 enabled=false，应用保持纯本地模式、无登录门槛。
- * 挂载时复核会话：账号被删除后立即失效；网络失败则保留会话（离线容忍）。
+ * 角色门控是 UI 约束 + RLS 服务端强制的双层：RLS 见 20260910140000 迁移。
  */
 export function useAuth() {
   const enabled = hasSupabaseConfig
-  const [user, setUser] = useState(() => (enabled ? loadSession() : null))
-  const [checking, setChecking] = useState(() => enabled && Boolean(loadSession()))
+  const [user, setUser] = useState(null)
+  const [checking, setChecking] = useState(enabled)
 
   useEffect(() => {
     if (!enabled) return undefined
-    const session = loadSession()
-    if (!session) return undefined
+    try {
+      localStorage.removeItem(LEGACY_SESSION_KEY)
+    } catch {
+      // 忽略
+    }
     let cancelled = false
-    supabase
-      .from('users')
-      .select('username, display_name')
-      .eq('username', session.username)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          // 网络/服务异常：不清除会话，按本地缓存继续
-          setChecking(false)
-          return
-        }
-        if (!data) {
-          saveSession(null)
+
+    const applySession = async (session) => {
+      if (!session?.user) {
+        if (!cancelled) {
           setUser(null)
-        } else {
-          const fresh = { ...session, displayName: data.display_name || data.username }
-          saveSession(fresh)
-          setUser(fresh)
+          setChecking(false)
         }
+        return
+      }
+      // Realtime 的 RLS 需要显式注入当前 JWT，否则收不到 postgres_changes
+      supabase.realtime.setAuth?.(session.access_token)
+      const profile = await fetchProfile(session.user.id)
+      if (cancelled) return
+      if (!profile) {
+        // auth 用户存在但没有资料（账号被删除等情况）：强制登出
+        await supabase.auth.signOut()
+        if (!cancelled) {
+          setUser(null)
+          setChecking(false)
+        }
+        return
+      }
+      setUser(profile)
+      setChecking(false)
+    }
+
+    // onAuthStateChange 回调内不能直接 await supabase 调用（SDK 会死锁），异步派发
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
         setChecking(false)
-      })
+        return
+      }
+      setTimeout(() => applySession(session), 0)
+    })
+
     return () => {
       cancelled = true
+      subscription.unsubscribe()
     }
   }, [enabled])
 
   /** @returns {Promise<string|null>} 失败原因；成功返回 null */
   const login = useCallback(async (username, password) => {
     if (!supabase) return '未配置 Supabase，无法登录'
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('username', username)
-      .maybeSingle()
-    if (error) return '账号服务不可用，请确认已执行 users 表迁移'
-    if (!data) return '账号或密码不正确'
-    const hash = await hashPassword(password)
-    if (hash !== data.password_hash) return '账号或密码不正确'
-    const session = {
-      username: data.username,
-      displayName: data.display_name || data.username,
-      signedInAt: new Date().toISOString(),
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: emailOf(username),
+      password,
+    })
+    if (error) {
+      return error.code === 'invalid_credentials' ? '账号或密码不正确' : `登录失败：${error.message}`
     }
-    saveSession(session)
-    setUser(session)
-    toast.success(`欢迎回来，${session.displayName}`)
+    const profile = data.user ? await fetchProfile(data.user.id) : null
+    toast.success(`欢迎回来，${profile?.displayName ?? username}`)
     return null
   }, [])
 
-  const logout = useCallback(() => {
-    saveSession(null)
-    setUser(null)
+  const logout = useCallback(async () => {
+    await supabase?.auth.signOut()
   }, [])
 
   /** 修改当前账号密码，@returns {Promise<string|null>} */
@@ -114,18 +126,13 @@ export function useAuth() {
     async (oldPassword, newPassword) => {
       if (!user || !supabase) return '未登录'
       if (newPassword.length < 6) return '新密码至少 6 位'
-      const oldHash = await hashPassword(oldPassword)
-      const { data } = await supabase
-        .from('users')
-        .select('password_hash')
-        .eq('username', user.username)
-        .maybeSingle()
-      if (!data || data.password_hash !== oldHash) return '当前密码不正确'
-      const password_hash = await hashPassword(newPassword)
-      const { error } = await supabase
-        .from('users')
-        .update({ password_hash, updated_at: new Date().toISOString() })
-        .eq('username', user.username)
+      // Auth 不提供「校验旧密码」，用旧密码重新登录一次来验证
+      const { error: verifyErr } = await supabase.auth.signInWithPassword({
+        email: emailOf(user.username),
+        password: oldPassword,
+      })
+      if (verifyErr) return '当前密码不正确'
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
       return error ? '修改失败，请稍后重试' : null
     },
     [user],
@@ -134,43 +141,38 @@ export function useAuth() {
   return { enabled, user, checking, login, logout, changePassword }
 }
 
-// ---- 账号维护（任意已登录用户可用，暂无权限隔离）----
+// ---- 账号维护（RLS 只读 profiles；增删走 account-admin Edge Function，服务端校验 admin）----
 
 export async function fetchUsers() {
   if (!supabase) return []
   const { data, error } = await supabase
-    .from('users')
-    .select('id, username, display_name, created_at')
+    .from('profiles')
+    .select('*')
     .order('created_at', { ascending: true })
-  return error ? [] : data.map(fromRow)
+  return error ? [] : data.map(fromProfile)
 }
 
 /** @returns {Promise<string|null>} */
-export async function createUser({ username, displayName, password }) {
-  if (!supabase) return '未配置 Supabase'
-  if (!USERNAME_RE.test(username)) return '用户名需为 2-32 位字母、数字或 _ . -'
-  if (password.length < 6) return '初始密码至少 6 位'
-  const { data: existing } = await supabase
-    .from('users')
-    .select('id')
-    .eq('username', username)
-    .maybeSingle()
-  if (existing) return '用户名已存在'
-  const password_hash = await hashPassword(password)
-  const { error } = await supabase.from('users').insert({
-    username,
-    password_hash,
-    display_name: (displayName || '').trim() || username,
-  })
-  return error ? '创建失败，请稍后重试' : null
+export function createUser({ username, displayName, password, role }) {
+  if (!supabase) return Promise.resolve('未配置 Supabase')
+  return invokeAdmin('create', { username, displayName, password, role })
 }
 
 /** @returns {Promise<string|null>} */
-export async function deleteUser(username, currentUsername) {
-  if (!supabase) return '未配置 Supabase'
-  if (username === currentUsername) return '不能删除当前登录的账号'
-  const { count } = await supabase.from('users').select('id', { count: 'exact', head: true })
-  if ((count ?? 0) <= 1) return '至少需要保留一个账号'
-  const { error } = await supabase.from('users').delete().eq('username', username)
-  return error ? '删除失败，请稍后重试' : null
+export function deleteUser(username) {
+  if (!supabase) return Promise.resolve('未配置 Supabase')
+  return invokeAdmin('delete', { username })
+}
+
+/** 修改账号角色（admin 限定，服务端校验），@returns {Promise<string|null>} */
+export function updateUserRole(username, role) {
+  if (!supabase) return Promise.resolve('未配置 Supabase')
+  return invokeAdmin('updateRole', { username, role })
+}
+
+/** 管理员为用户重置密码（手动指定新密码），@returns {Promise<string|null>} */
+export function resetUserPassword(username, password) {
+  if (!supabase) return Promise.resolve('未配置 Supabase')
+  if ((password ?? '').length < 6) return Promise.resolve('新密码至少 6 位')
+  return invokeAdmin('resetPassword', { username, password })
 }

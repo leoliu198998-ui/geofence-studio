@@ -5,6 +5,7 @@ import { CitySwitcher } from '@/components/CitySwitcher'
 import { ModeSwitch } from '@/components/ModeSwitch'
 import { SearchBox } from '@/components/SearchBox'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { ROLE_LABEL } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
 const SYNC_META = {
@@ -56,7 +57,7 @@ export function TopBar({ AMap, map, mode, onModeChange, syncStatus, city, onCity
           <button
             type="button"
             aria-label="账号"
-            title={`${user.displayName}（@${user.username}）`}
+            title={`${user.displayName}（@${user.username} · ${ROLE_LABEL[user.role] || user.role}）`}
             onClick={() => setAccountOpen(true)}
             className="pointer-events-auto flex h-8 shrink-0 items-center gap-2 rounded-md border border-hairline bg-background/70 px-1.5 backdrop-blur-md transition-colors hover:bg-accent"
           >

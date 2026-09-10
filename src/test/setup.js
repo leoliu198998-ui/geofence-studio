@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { webcrypto } from 'node:crypto'
 
-// jsdom 不带 Web Crypto subtle，用 Node 的 webcrypto 补齐（hashPassword 依赖）
+// jsdom 的 Web Crypto 能力不全，用 Node 的 webcrypto 补齐
 if (!globalThis.crypto?.subtle) {
   Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true })
 }
