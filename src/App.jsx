@@ -6,13 +6,16 @@ import { CoordsHud } from '@/components/CoordsHud'
 import { DrawHud } from '@/components/DrawHud'
 import { FencePanel } from '@/components/FencePanel'
 import { ImportPreviewDialog } from '@/components/ImportPreviewDialog'
+import { LoginPage } from '@/components/LoginPage'
 import { NameDialog } from '@/components/NameDialog'
 import { SetupGuide } from '@/components/SetupGuide'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { ToolRail } from '@/components/ToolRail'
 import { TopBar } from '@/components/TopBar'
 import { Button } from '@/components/ui/button'
 import { AMAP_MAP_STYLE, AMAP_MAP_STYLE_LIGHT, hasAmapConfig } from '@/config/amap'
 import { useAmap } from '@/hooks/useAmap'
+import { useAuth } from '@/hooks/useAuth'
 import { useCity } from '@/hooks/useCity'
 import { useFenceManager } from '@/hooks/useFenceManager'
 import { useFenceStore } from '@/hooks/useFenceStore'
@@ -25,7 +28,7 @@ function loadMode() {
   return localStorage.getItem(MODE_KEY) === 'rent' ? 'rent' : 'sale'
 }
 
-function Workbench({ theme, resolvedTheme, onThemeCycle }) {
+function Workbench({ theme, resolvedTheme, onThemeCycle, auth }) {
   const containerRef = useRef(null)
   const { map, AMap, status, error, coords, retry } = useAmap(containerRef)
   const { fences, syncStatus, insertFence, insertFences, updateFence, removeFence } = useFenceStore()
@@ -184,6 +187,9 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
         onCityChange={setCity}
         theme={theme}
         onThemeCycle={onThemeCycle}
+        user={auth?.user ?? null}
+        onLogout={auth?.logout}
+        onChangePassword={auth?.changePassword}
       />
 
       <ToolRail
@@ -274,6 +280,7 @@ function Workbench({ theme, resolvedTheme, onThemeCycle }) {
 
 export default function App() {
   const { theme, resolved, cycleTheme } = useTheme()
+  const auth = useAuth()
 
   if (!hasAmapConfig) {
     return (
@@ -283,9 +290,32 @@ export default function App() {
       </>
     )
   }
+
+  // 配置了 Supabase 才启用登录门槛；未配置时保持纯本地模式
+  if (auth.enabled) {
+    if (auth.checking) {
+      return (
+        <div className="flex h-full items-center justify-center bg-background">
+          <span className="h-8 w-8 animate-spin rounded-full border-2 border-hairline border-t-primary" />
+        </div>
+      )
+    }
+    if (!auth.user) {
+      return (
+        <TooltipProvider delayDuration={250}>
+          <LoginPage
+            onLogin={auth.login}
+            themeSlot={<ThemeToggle theme={theme} onCycle={cycleTheme} />}
+          />
+          <Toaster theme={resolved} />
+        </TooltipProvider>
+      )
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={250}>
-      <Workbench theme={theme} resolvedTheme={resolved} onThemeCycle={cycleTheme} />
+      <Workbench theme={theme} resolvedTheme={resolved} onThemeCycle={cycleTheme} auth={auth} />
       <Toaster theme={resolved} />
     </TooltipProvider>
   )
