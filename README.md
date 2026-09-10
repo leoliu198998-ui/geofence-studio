@@ -74,6 +74,28 @@ npm run lint    # oxlint
 
 ## Supabase 配置
 
+### 本地开发（推荐）
+
+需要 [colima](https://github.com/abiosoft/colima)（或 Docker Desktop）+ Supabase CLI：
+
+```bash
+colima start          # 启动容器运行时（已运行可跳过）
+supabase start        # 启动本地 Supabase 全家桶，migration 自动建表
+```
+
+然后在项目根目录新建 `.env.local`（已 gitignore，优先级高于 `.env`）：
+
+```bash
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_ANON_KEY=<本地 anon key，用 supabase status -o env 查看>
+```
+
+本地服务一览：API `http://127.0.0.1:54321` · Studio `http://127.0.0.1:54323` · 数据库 `postgresql://postgres:postgres@127.0.0.1:54322/postgres` · 邮件测试 Inbucket `http://127.0.0.1:54324`。
+
+要切回云端，删掉 `.env.local` 并重启 dev server 即可（`.env` 里保留云端配置）。
+
+### 云端（跨设备共享）
+
 1. 在 [Supabase](https://supabase.com/dashboard) 创建项目，进入 Project Settings → API，复制 **Project URL** 与 **anon public key** 填入 `.env`
 2. 建表：migration 见 `supabase/migrations/20260909090000_create_fences.sql`（含 RLS anon 全量读写策略、Realtime publication），用 Supabase CLI 或 SQL Editor 执行
 3. 表结构 `public.fences`：
