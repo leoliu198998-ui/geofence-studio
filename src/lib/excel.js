@@ -1,14 +1,7 @@
 import * as XLSX from 'xlsx'
 
 export const FENCE_SHEET_NAME = '运营区围栏清单'
-const HEADERS = [
-  '事业部',
-  '对应区域',
-  '细化四至',
-  'point_id（点位 ID）',
-  'longitude（经度）',
-  'latitude（纬度）',
-]
+const EXPORT_HEADERS = ['对应区域', 'point_id（点位 ID）', 'longitude（经度）', 'latitude（纬度）']
 
 /** 表头列定位：按关键字模糊匹配，容忍括号/空格差异 */
 function findCol(header, ...keywords) {
@@ -48,15 +41,16 @@ export function parseFenceWorkbook(data, defaultMode = 'sale') {
   const colPid = findCol(header, 'point_id') >= 0 ? findCol(header, 'point_id') : findCol(header, '点位')
   const colLng = findCol(header, 'longitude') >= 0 ? findCol(header, 'longitude') : findCol(header, '经度')
   const colLat = findCol(header, 'latitude') >= 0 ? findCol(header, 'latitude') : findCol(header, '纬度')
-  if (colDetail < 0 || colLng < 0 || colLat < 0) {
-    throw new Error('缺少必需列（细化四至 / 经度 / 纬度），请使用标准模板')
+  const colGroup = colDetail >= 0 ? colDetail : colRegion
+  if (colGroup < 0 || colLng < 0 || colLat < 0) {
+    throw new Error('缺少必需列（细化四至或对应区域 / 经度 / 纬度），请使用标准模板')
   }
 
-  // 按细化四至分组，保持出现顺序
+  // 按细化四至分组（无细化四至列时按对应区域），保持出现顺序
   const groups = new Map()
   for (const row of rows.slice(1)) {
     if (!row) continue
-    const detail = String(row[colDetail] ?? '').trim()
+    const detail = String(row[colGroup] ?? '').trim()
     if (!detail) continue
     if (!groups.has(detail)) groups.set(detail, { region: '', points: [] })
     const g = groups.get(detail)
@@ -94,23 +88,23 @@ export function parseFenceWorkbook(data, defaultMode = 'sale') {
 }
 
 /**
- * 围栏列表 → 模板 sheet2 行（不含表头）。
- * 对应区域 / 细化四至 均填围栏名；事业部无数据留空；point_id 从 0 递增。
+ * 围栏列表 → 导出行（不含表头）。
+ * 导出列：对应区域 / point_id / 经度 / 纬度；point_id 从 0 递增。
  */
 export function fencesToSheetRows(fences) {
   const rows = []
   for (const f of fences) {
     f.path.forEach((p, i) => {
-      rows.push(['', f.name, f.name, i, p[0], p[1]])
+      rows.push([f.name, i, p[0], p[1]])
     })
   }
   return rows
 }
 
-/** 导出围栏为 xlsx，格式与模板 `运营区围栏清单` 一致 */
+/** 导出围栏为 xlsx，sheet 名 `运营区围栏清单` */
 export function downloadFencesXlsx(fences, filename) {
-  const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...fencesToSheetRows(fences)])
-  ws['!cols'] = [{ wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 14 }]
+  const ws = XLSX.utils.aoa_to_sheet([EXPORT_HEADERS, ...fencesToSheetRows(fences)])
+  ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 14 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, FENCE_SHEET_NAME)
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
